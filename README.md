@@ -1,4 +1,4 @@
-# BecoSwap Farming 🥞
+# BecoSwap Farming
 
 [![Actions Status](https://github.com/becoswap/becoswap-farm/workflows/CI/badge.svg)](https://github.com/pancakeswap/becoswap-farm/actions)
 [![codecov](https://codecov.io/gh/becoswap/becoswap-farm/branch/master/graph/badge.svg?token=5XMLP74IR0)](https://codecov.io/gh/pancakeswap/becoswap-farm)
