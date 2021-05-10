@@ -3,11 +3,95 @@ pragma solidity 0.6.12;
 import "@pancakeswap/pancake-swap-lib/contracts/token/BEP20/BEP20.sol";
 
 // BecoToken with Governance.
-contract BecoToken is BEP20('BecoSwap Token', 'Beco') {
+contract BecoToken is BEP20 {
+    // Transfer tax rate in basis points. (default 5%)
+    uint16 public transferTaxRate = 1000;
+    // Burn rate % of transfer tax. (default 20% x 5% = 1% of total amount).
+    uint16 public burnRate = 20;
+    // Max transfer tax rate: 10%.
+    uint16 public constant MAXIMUM_TRANSFER_TAX_RATE = 1000;
+    // Burn address
+    address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
+    // token locker
+    address public tokenLocker;
+
+    // The operator can only update the transfer tax rate
+    address private _operator;
+
+    // Events
+    event OperatorTransferred(address indexed previousOperator, address indexed newOperator);
+    event TokenLockerUpdated(address indexed previousTokenLocker, address indexed newTokenLocker);
+
+    modifier onlyOperator() {
+        require(_operator == msg.sender, "operator: caller is not the operator");
+        _;
+    }
+
+    /**
+     * @notice Constructs the BecoToken contract.
+     */
+    constructor() public BEP20("BecoSwap Token", "BECO") {
+        _operator = _msgSender();
+        emit OperatorTransferred(address(0), _operator);
+    }
+
     /// @notice Creates `_amount` token to `_to`. Must only be called by the owner (MasterChef).
     function mint(address _to, uint256 _amount) public onlyOwner {
         _mint(_to, _amount);
         _moveDelegates(address(0), _delegates[_to], _amount);
+    }
+
+    /// @dev overrides transfer function to meet tokenomics of BECO
+    function _transfer(address sender, address recipient, uint256 amount) internal virtual override {
+        if (recipient == BURN_ADDRESS || transferTaxRate == 0) {
+            super._transfer(sender, recipient, amount);
+        } else {
+            // default tax is 10% of every transfer
+            uint256 taxAmount = amount.mul(transferTaxRate).div(10000);
+            uint256 burnAmount = taxAmount.mul(burnRate).div(100);
+            uint256 lockAmount = taxAmount.sub(burnAmount);
+            require(taxAmount == burnAmount + lockAmount, "BECO::transfer: Burn value invalid");
+
+            // default 90% of transfer sent to recipient
+            uint256 sendAmount = amount.sub(taxAmount);
+            require(amount == sendAmount + taxAmount, "BECO::transfer: Tax value invalid");
+
+            if (tokenLocker != address(0)) {
+                super._transfer(sender, BURN_ADDRESS, burnAmount);
+                super._transfer(sender, tokenLocker, lockAmount);
+            } else {
+                super._transfer(sender, BURN_ADDRESS, burnAmount.add(lockAmount));
+            }
+            
+            super._transfer(sender, recipient, sendAmount);
+            amount = sendAmount;
+        }
+    }
+
+    /**
+     * @dev Returns the address of the current operator.
+     */
+    function operator() public view returns (address) {
+        return _operator;
+    }
+
+    /**
+     * @dev Transfers operator of the contract to a new account (`newOperator`).
+     * Can only be called by the current operator.
+     */
+    function transferOperator(address newOperator) public onlyOperator {
+        require(newOperator != address(0), "BECO::transferOperator: new operator is the zero address");
+        emit OperatorTransferred(_operator, newOperator);
+        _operator = newOperator;
+    }
+
+     /**
+     * @dev Update the token locker.
+     * Can only be called by the current operator.
+     */
+    function updateTokenLocker(address _tokenLocker) public onlyOperator {
+        emit TokenLockerUpdated(tokenLocker, _tokenLocker);
+        tokenLocker = _tokenLocker;
     }
 
     // Copied and modified from YAM code:

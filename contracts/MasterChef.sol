@@ -5,8 +5,7 @@ import '@pancakeswap/pancake-swap-lib/contracts/token/BEP20/IBEP20.sol';
 import '@pancakeswap/pancake-swap-lib/contracts/token/BEP20/SafeBEP20.sol';
 import '@pancakeswap/pancake-swap-lib/contracts/access/Ownable.sol';
 
-import "./CakeToken.sol";
-import "./SyrupBar.sol";
+import "./BecoToken.sol";
 
 // import "@nomiclabs/buidler/console.sol";
 
@@ -216,7 +215,7 @@ contract MasterChef is Ownable {
         uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
         uint256 becoReward = multiplier.mul(becoPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
         beco.mint(devaddr, becoReward.div(10));
-        beco.mint(address(syrup), becoReward);
+        beco.mint(address(this), becoReward);
         pool.accBecoPerShare = pool.accBecoPerShare.add(becoReward.mul(1e12).div(lpSupply));
         pool.lastRewardBlock = block.number;
     }
@@ -264,47 +263,6 @@ contract MasterChef is Ownable {
         emit Withdraw(msg.sender, _pid, _amount);
     }
 
-    // Stake BECO tokens to MasterChef
-    function enterStaking(uint256 _amount) public {
-        PoolInfo storage pool = poolInfo[0];
-        UserInfo storage user = userInfo[0][msg.sender];
-        updatePool(0);
-        if (user.amount > 0) {
-            uint256 pending = user.amount.mul(pool.accBecoPerShare).div(1e12).sub(user.rewardDebt);
-            if(pending > 0) {
-                safeBecoTransfer(msg.sender, pending);
-            }
-        }
-        if(_amount > 0) {
-            pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
-            user.amount = user.amount.add(_amount);
-        }
-        user.rewardDebt = user.amount.mul(pool.accBecoPerShare).div(1e12);
-
-        syrup.mint(msg.sender, _amount);
-        emit Deposit(msg.sender, 0, _amount);
-    }
-
-    // Withdraw BECO tokens from STAKING.
-    function leaveStaking(uint256 _amount) public {
-        PoolInfo storage pool = poolInfo[0];
-        UserInfo storage user = userInfo[0][msg.sender];
-        require(user.amount >= _amount, "withdraw: not good");
-        updatePool(0);
-        uint256 pending = user.amount.mul(pool.accBecoPerShare).div(1e12).sub(user.rewardDebt);
-        if(pending > 0) {
-            safeBecoTransfer(msg.sender, pending);
-        }
-        if(_amount > 0) {
-            user.amount = user.amount.sub(_amount);
-            pool.lpToken.safeTransfer(address(msg.sender), _amount);
-        }
-        user.rewardDebt = user.amount.mul(pool.accBecoPerShare).div(1e12);
-
-        syrup.burn(msg.sender, _amount);
-        emit Withdraw(msg.sender, 0, _amount);
-    }
-
     // Withdraw without caring about rewards. EMERGENCY ONLY.
     function emergencyWithdraw(uint256 _pid) public {
         PoolInfo storage pool = poolInfo[_pid];
@@ -317,7 +275,12 @@ contract MasterChef is Ownable {
 
     // Safe beco transfer function, just in case if rounding error causes pool to not have enough Beco.
     function safeBecoTransfer(address _to, uint256 _amount) internal {
-        syrup.safeBecoTransfer(_to, _amount);
+        uint256 becoBal = beco.balanceOf(address(this));
+        if (_amount > becoBal) {
+            beco.transfer(_to, becoBal);
+        } else {
+            beco.transfer(_to, _amount);
+        }
     }
 
     // Update dev address by the previous dev.
