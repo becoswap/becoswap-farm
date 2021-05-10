@@ -1,6 +1,7 @@
+// SPDX-License-Identifier: MIT
 pragma solidity 0.6.12;
 
-import "@pancakeswap/pancake-swap-lib/contracts/token/BEP20/BEP20.sol";
+import "./libs/BEP20.sol";
 
 // BecoToken with Governance.
 contract BecoToken is BEP20 {
@@ -9,7 +10,7 @@ contract BecoToken is BEP20 {
     // Burn rate % of transfer tax. (default 20% x 10% = 2% of total amount).
     uint16 public burnRate = 20;
     // Max transfer tax rate: 10%.
-    uint16 public constant MAXIMUM_TRANSFER_TAX_RATE = 1000;
+    uint16 public constant MAXIMUM_TRANSFER_TAX_RATE = 1500;
     // Burn address
     address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
     // token locker
@@ -21,6 +22,8 @@ contract BecoToken is BEP20 {
     // Events
     event OperatorTransferred(address indexed previousOperator, address indexed newOperator);
     event TokenLockerUpdated(address indexed previousTokenLocker, address indexed newTokenLocker);
+    event TransferTaxRateUpdated(address indexed operator, uint256 previousRate, uint256 newRate);
+    event BurnRateUpdated(address indexed operator, uint256 previousRate, uint256 newRate);
 
     modifier onlyOperator() {
         require(_operator == msg.sender, "operator: caller is not the operator");
@@ -94,13 +97,33 @@ contract BecoToken is BEP20 {
         tokenLocker = _tokenLocker;
     }
 
+    /**
+     * @dev Update the transfer tax rate.
+     * Can only be called by the current operator.
+     */
+    function updateTransferTaxRate(uint16 _transferTaxRate) public onlyOperator {
+        require(_transferTaxRate <= MAXIMUM_TRANSFER_TAX_RATE, "BECO::updateTransferTaxRate: Transfer tax rate must not exceed the maximum rate.");
+        emit TransferTaxRateUpdated(msg.sender, transferTaxRate, _transferTaxRate);
+        transferTaxRate = _transferTaxRate;
+    }
+
+     /**
+     * @dev Update the burn rate.
+     * Can only be called by the current operator.
+     */
+    function updateBurnRate(uint16 _burnRate) public onlyOperator {
+        require(_burnRate <= 100, "BECO::updateBurnRate: Burn rate must not exceed the maximum rate.");
+        emit BurnRateUpdated(msg.sender, burnRate, _burnRate);
+        burnRate = _burnRate;
+    }
+
     // Copied and modified from YAM code:
     // https://github.com/yam-finance/yam-protocol/blob/master/contracts/token/YAMGovernanceStorage.sol
     // https://github.com/yam-finance/yam-protocol/blob/master/contracts/token/YAMGovernance.sol
     // Which is copied and modified from COMPOUND:
     // https://github.com/compound-finance/compound-protocol/blob/master/contracts/Governance/Comp.sol
 
-    /// @notice A record of each accounts delegate
+    /// @dev A record of each accounts delegate
     mapping (address => address) internal _delegates;
 
     /// @notice A checkpoint for marking number of votes from a given block
