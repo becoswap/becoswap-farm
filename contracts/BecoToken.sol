@@ -4,9 +4,9 @@ import "@pancakeswap/pancake-swap-lib/contracts/token/BEP20/BEP20.sol";
 
 // BecoToken with Governance.
 contract BecoToken is BEP20 {
-    // Transfer tax rate in basis points. (default 5%)
+    // Transfer tax rate in basis points. (default 10%)
     uint16 public transferTaxRate = 1000;
-    // Burn rate % of transfer tax. (default 20% x 5% = 1% of total amount).
+    // Burn rate % of transfer tax. (default 20% x 10% = 2% of total amount).
     uint16 public burnRate = 20;
     // Max transfer tax rate: 10%.
     uint16 public constant MAXIMUM_TRANSFER_TAX_RATE = 1000;
