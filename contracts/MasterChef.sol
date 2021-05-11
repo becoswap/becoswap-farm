@@ -308,7 +308,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
     }
 
     // Update the beco referral contract address by the owner
-    function setPantherReferral(IBecoReferral _becoReferral) public onlyOwner {
+    function setBecoReferral(IBecoReferral _becoReferral) public onlyOwner {
         becoReferral = _becoReferral;
     }
 

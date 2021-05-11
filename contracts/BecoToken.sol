@@ -1,33 +1,66 @@
 // SPDX-License-Identifier: MIT
+
 pragma solidity 0.6.12;
 
 import "./libs/BEP20.sol";
+
+import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
+import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol";
+import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Factory.sol";
 
 // BecoToken with Governance.
 contract BecoToken is BEP20 {
     // Transfer tax rate in basis points. (default 10%)
     uint16 public transferTaxRate = 1000;
-    // Burn rate % of transfer tax. (default 20% x 10% = 2% of total amount).
+    // Burn rate % of transfer tax. (default 20% x 5% = 1% of total amount).
     uint16 public burnRate = 20;
     // Max transfer tax rate: 10%.
-    uint16 public constant MAXIMUM_TRANSFER_TAX_RATE = 1500;
+    uint16 public constant MAXIMUM_TRANSFER_TAX_RATE = 1000;
     // Burn address
     address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
-    // token locker
-    address public tokenLocker;
+
+    // Addresses that excluded from antiWhale
+    mapping(address => bool) private _excludedFromAntiWhale;
+    // Automatic swap and liquify enabled
+    bool public swapAndLiquifyEnabled = false;
+    // Min amount to liquify. (default 500 BECO)
+    uint256 public minAmountToLiquify = 500 ether;
+    // The swap router, modifiable. Will be changed to BecoSwap's router when our own AMM release
+    IUniswapV2Router02 public becoSwapRouter;
+    // The trading pair
+    address public becoSwapPair;
+    // In swap and liquify
+    bool private _inSwapAndLiquify;
 
     // The operator can only update the transfer tax rate
     address private _operator;
 
     // Events
     event OperatorTransferred(address indexed previousOperator, address indexed newOperator);
-    event TokenLockerUpdated(address indexed previousTokenLocker, address indexed newTokenLocker);
     event TransferTaxRateUpdated(address indexed operator, uint256 previousRate, uint256 newRate);
     event BurnRateUpdated(address indexed operator, uint256 previousRate, uint256 newRate);
+    event SwapAndLiquifyEnabledUpdated(address indexed operator, bool enabled);
+    event MinAmountToLiquifyUpdated(address indexed operator, uint256 previousAmount, uint256 newAmount);
+    event BecoSwapRouterUpdated(address indexed operator, address indexed router, address indexed pair);
+    event SwapAndLiquify(uint256 tokensSwapped, uint256 ethReceived, uint256 tokensIntoLiqudity);
 
     modifier onlyOperator() {
         require(_operator == msg.sender, "operator: caller is not the operator");
         _;
+    }
+
+
+    modifier lockTheSwap {
+        _inSwapAndLiquify = true;
+        _;
+        _inSwapAndLiquify = false;
+    }
+
+    modifier transferTaxFree {
+        uint16 _transferTaxRate = transferTaxRate;
+        transferTaxRate = 0;
+        _;
+        transferTaxRate = _transferTaxRate;
     }
 
     /**
@@ -45,30 +78,155 @@ contract BecoToken is BEP20 {
     }
 
     /// @dev overrides transfer function to meet tokenomics of BECO
-    function _transfer(address sender, address recipient, uint256 amount) internal virtual override {
+    function _transfer(address sender, address recipient, uint256 amount) internal virtual override{
+        // swap and liquify
+        if (
+            swapAndLiquifyEnabled == true
+            && _inSwapAndLiquify == false
+            && address(becoSwapRouter) != address(0)
+            && becoSwapPair != address(0)
+            && sender != becoSwapPair
+            && sender != owner()
+        ) {
+            swapAndLiquify();
+        }
+
         if (recipient == BURN_ADDRESS || transferTaxRate == 0) {
             super._transfer(sender, recipient, amount);
         } else {
-            // default tax is 10% of every transfer
+            // default tax is 5% of every transfer
             uint256 taxAmount = amount.mul(transferTaxRate).div(10000);
             uint256 burnAmount = taxAmount.mul(burnRate).div(100);
-            uint256 lockAmount = taxAmount.sub(burnAmount);
-            require(taxAmount == burnAmount + lockAmount, "BECO::transfer: Burn value invalid");
+            uint256 liquidityAmount = taxAmount.sub(burnAmount);
+            require(taxAmount == burnAmount + liquidityAmount, "BECO::transfer: Burn value invalid");
 
-            // default 90% of transfer sent to recipient
+            // default 95% of transfer sent to recipient
             uint256 sendAmount = amount.sub(taxAmount);
             require(amount == sendAmount + taxAmount, "BECO::transfer: Tax value invalid");
 
-            if (tokenLocker != address(0)) {
-                super._transfer(sender, BURN_ADDRESS, burnAmount);
-                super._transfer(sender, tokenLocker, lockAmount);
-            } else {
-                super._transfer(sender, BURN_ADDRESS, burnAmount.add(lockAmount));
-            }
-            
+            super._transfer(sender, BURN_ADDRESS, burnAmount);
+            super._transfer(sender, address(this), liquidityAmount);
             super._transfer(sender, recipient, sendAmount);
             amount = sendAmount;
         }
+    }
+
+    /// @dev Swap and liquify
+    function swapAndLiquify() private lockTheSwap transferTaxFree {
+        uint256 contractTokenBalance = balanceOf(address(this));
+        if (contractTokenBalance >= minAmountToLiquify) {
+            // only min amount to liquify
+            uint256 liquifyAmount = minAmountToLiquify;
+
+            // split the liquify amount into halves
+            uint256 half = liquifyAmount.div(2);
+            uint256 otherHalf = liquifyAmount.sub(half);
+
+            // capture the contract's current ETH balance.
+            // this is so that we can capture exactly the amount of ETH that the
+            // swap creates, and not make the liquidity event include any ETH that
+            // has been manually sent to the contract
+            uint256 initialBalance = address(this).balance;
+
+            // swap tokens for ETH
+            swapTokensForEth(half);
+
+            // how much ETH did we just swap into?
+            uint256 newBalance = address(this).balance.sub(initialBalance);
+
+            // add liquidity
+            addLiquidity(otherHalf, newBalance);
+
+            emit SwapAndLiquify(half, newBalance, otherHalf);
+        }
+    }
+
+    /// @dev Swap tokens for eth
+    function swapTokensForEth(uint256 tokenAmount) private {
+        // generate the becoSwap pair path of token -> weth
+        address[] memory path = new address[](2);
+        path[0] = address(this);
+        path[1] = becoSwapRouter.WETH();
+
+        _approve(address(this), address(becoSwapRouter), tokenAmount);
+
+        // make the swap
+        becoSwapRouter.swapExactTokensForETHSupportingFeeOnTransferTokens(
+            tokenAmount,
+            0, // accept any amount of ETH
+            path,
+            address(this),
+            block.timestamp
+        );
+    }
+
+    /// @dev Add liquidity
+    function addLiquidity(uint256 tokenAmount, uint256 ethAmount) private {
+        // approve token transfer to cover all possible scenarios
+        _approve(address(this), address(becoSwapRouter), tokenAmount);
+
+        // add the liquidity
+        becoSwapRouter.addLiquidityETH{value: ethAmount}(
+            address(this),
+            tokenAmount,
+            0, // slippage is unavoidable
+            0, // slippage is unavoidable
+            operator(),
+            block.timestamp
+        );
+    }
+
+    // To receive BNB from becoSwapRouter when swapping
+    receive() external payable {}
+
+    /**
+     * @dev Update the transfer tax rate.
+     * Can only be called by the current operator.
+     */
+    function updateTransferTaxRate(uint16 _transferTaxRate) public onlyOperator {
+        require(_transferTaxRate <= MAXIMUM_TRANSFER_TAX_RATE, "BECO::updateTransferTaxRate: Transfer tax rate must not exceed the maximum rate.");
+        emit TransferTaxRateUpdated(msg.sender, transferTaxRate, _transferTaxRate);
+        transferTaxRate = _transferTaxRate;
+    }
+
+    /**
+     * @dev Update the burn rate.
+     * Can only be called by the current operator.
+     */
+    function updateBurnRate(uint16 _burnRate) public onlyOperator {
+        require(_burnRate <= 100, "BECO::updateBurnRate: Burn rate must not exceed the maximum rate.");
+        emit BurnRateUpdated(msg.sender, burnRate, _burnRate);
+        burnRate = _burnRate;
+    }
+
+   
+    /**
+     * @dev Update the min amount to liquify.
+     * Can only be called by the current operator.
+     */
+    function updateMinAmountToLiquify(uint256 _minAmount) public onlyOperator {
+        emit MinAmountToLiquifyUpdated(msg.sender, minAmountToLiquify, _minAmount);
+        minAmountToLiquify = _minAmount;
+    }
+
+    /**
+     * @dev Update the swapAndLiquifyEnabled.
+     * Can only be called by the current operator.
+     */
+    function updateSwapAndLiquifyEnabled(bool _enabled) public onlyOperator {
+        emit SwapAndLiquifyEnabledUpdated(msg.sender, _enabled);
+        swapAndLiquifyEnabled = _enabled;
+    }
+
+    /**
+     * @dev Update the swap router.
+     * Can only be called by the current operator.
+     */
+    function updateBecoSwapRouter(address _router) public onlyOperator {
+        becoSwapRouter = IUniswapV2Router02(_router);
+        becoSwapPair = IUniswapV2Factory(becoSwapRouter.factory()).getPair(address(this), becoSwapRouter.WETH());
+        require(becoSwapPair != address(0), "BECO::updateBecoSwapRouter: Invalid pair address.");
+        emit BecoSwapRouterUpdated(msg.sender, address(becoSwapRouter), becoSwapPair);
     }
 
     /**
@@ -86,35 +244,6 @@ contract BecoToken is BEP20 {
         require(newOperator != address(0), "BECO::transferOperator: new operator is the zero address");
         emit OperatorTransferred(_operator, newOperator);
         _operator = newOperator;
-    }
-
-     /**
-     * @dev Update the token locker.
-     * Can only be called by the current operator.
-     */
-    function updateTokenLocker(address _tokenLocker) public onlyOperator {
-        emit TokenLockerUpdated(tokenLocker, _tokenLocker);
-        tokenLocker = _tokenLocker;
-    }
-
-    /**
-     * @dev Update the transfer tax rate.
-     * Can only be called by the current operator.
-     */
-    function updateTransferTaxRate(uint16 _transferTaxRate) public onlyOperator {
-        require(_transferTaxRate <= MAXIMUM_TRANSFER_TAX_RATE, "BECO::updateTransferTaxRate: Transfer tax rate must not exceed the maximum rate.");
-        emit TransferTaxRateUpdated(msg.sender, transferTaxRate, _transferTaxRate);
-        transferTaxRate = _transferTaxRate;
-    }
-
-     /**
-     * @dev Update the burn rate.
-     * Can only be called by the current operator.
-     */
-    function updateBurnRate(uint16 _burnRate) public onlyOperator {
-        require(_burnRate <= 100, "BECO::updateBurnRate: Burn rate must not exceed the maximum rate.");
-        emit BurnRateUpdated(msg.sender, burnRate, _burnRate);
-        burnRate = _burnRate;
     }
 
     // Copied and modified from YAM code:
@@ -288,7 +417,7 @@ contract BecoToken is BEP20 {
         internal
     {
         address currentDelegate = _delegates[delegator];
-        uint256 delegatorBalance = balanceOf(delegator); // balance of underlying BECOs (not scaled);
+        uint256 delegatorBalance = balanceOf(delegator); // balance of underlying BECO (not scaled);
         _delegates[delegator] = delegatee;
 
         emit DelegateChanged(delegator, currentDelegate, delegatee);
