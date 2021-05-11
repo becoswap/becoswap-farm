@@ -94,13 +94,13 @@ contract BecoToken is BEP20 {
         if (recipient == BURN_ADDRESS || transferTaxRate == 0) {
             super._transfer(sender, recipient, amount);
         } else {
-            // default tax is 5% of every transfer
+            // default tax is 10% of every transfer
             uint256 taxAmount = amount.mul(transferTaxRate).div(10000);
             uint256 burnAmount = taxAmount.mul(burnRate).div(100);
             uint256 liquidityAmount = taxAmount.sub(burnAmount);
             require(taxAmount == burnAmount + liquidityAmount, "BECO::transfer: Burn value invalid");
 
-            // default 95% of transfer sent to recipient
+            // default 90% of transfer sent to recipient
             uint256 sendAmount = amount.sub(taxAmount);
             require(amount == sendAmount + taxAmount, "BECO::transfer: Tax value invalid");
 
