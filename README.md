@@ -9,7 +9,7 @@ https://becoswap.com. Feel free to read the code. More details coming soon.
 
 ### BSCMAINNET
 
-- BecoToken - 0x8fe4d28476cdd43d36a12eb47dc3243c1925f263
+- BecoToken - [0x8fe4d28476cdd43d36a12eb47dc3243c1925f263](https://bscscan.com/token/0x8fe4d28476cdd43d36a12eb47dc3243c1925f263)
 - MasterChef - updating
 - Timelock - updating
 - (Uni|Beco)swapV2Factory - updating
