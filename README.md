@@ -12,7 +12,7 @@ https://becoswap.com. Feel free to read the code. More details coming soon.
 - BecoToken - [0x8fe4d28476cdd43d36a12eb47dc3243c1925f263](https://bscscan.com/token/0x8fe4d28476cdd43d36a12eb47dc3243c1925f263)
 - MasterChef - updating
 - Timelock - updating
-- (Uni|Beco)swapV2Factory - [0xa27c21e54bc9b798849d82ba965a9a2090f4b730](https://bscscan.com/address/0xa27c21e54bc9b798849d82ba965a9a2090f4b730#code)
+- (Uni|Beco)swapV2Factory - [0xa27c21e54bc9b798849d82ba965a9a2090f4b730](https://bscscan.com/address/0xa27c21e54bc9b798849d82ba965a9a2090f4b730)
 - (Uni|Beco)swapV2Router02 - updating
 - (Uni|Beco)swapV2Pair init code hash - `updating`
 - MultiCall - updating
