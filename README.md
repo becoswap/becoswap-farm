@@ -19,3 +19,6 @@ https://becoswap.com. Feel free to read the code. More details coming soon.
 - BecoToken - [0x2Eddba8b949048861d2272068A94792275A51658](https://explorer.kardiachain.io/token/0x2Eddba8b949048861d2272068A94792275A51658)
 - MasterChef - [0x20e8Ff1e1d9BC429489dA76B1Fc20A9BFbF3ee7e](https://explorer.kardiachain.io/address/0x20e8Ff1e1d9BC429489dA76B1Fc20A9BFbF3ee7e)
 - Timelock - [0x17c14fC26d2aa58e0246984CFF8608075416ca64](https://explorer.kardiachain.io/address/0x17c14fC26d2aa58e0246984CFF8608075416ca64)
+- (Uni|Beco)swapV2Factory - [0x58b54BCDF2aF8a70dD6433EB39b308148261bB49](https://explorer.kardiachain.io/address/0x58b54BCDF2aF8a70dD6433EB39b308148261bB49)
+- (Uni|Beco)swapV2Router02 - [0x20487A569D05bE994B5E0549dD276FB625401C67](https://explorer.kardiachain.io/address/0x20487A569D05bE994B5E0549dD276FB625401C67)
+- (Uni|Beco)swapV2Pair init code hash - `0xbc2e0e6843476e2b4125dd4831781e818561ebcdc908b21207ba2724a52d3af7`
