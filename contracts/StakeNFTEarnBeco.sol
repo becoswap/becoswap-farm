@@ -40,7 +40,7 @@ contract StakeNFTEarnBeco is
     // total has stake to MasterChef stakingPower
     uint256 public totalStakingPower;
     IERC721 public immutable erc721;
-    address public constant beco = 0x2Eddba8b949048861d2272068A94792275A51658;
+    address public constant beco = 0x64c8B3628EAF34AEfeFc3Cf6C9017Fd20611717c;
     IMasterchef public immutable masterChef;
     IGetStakingPower public immutable getStakingPowerProxy;
     bool public immutable isMintPowerTokenEveryTimes;
@@ -80,6 +80,11 @@ contract StakeNFTEarnBeco is
 
     function getStakingPower(uint256 _tokenId) public view returns (uint256) {
         return getStakingPowerProxy.getStakingPower(address(erc721), _tokenId);
+    }
+
+    function setPoolId(uint256 _poolId) external onlyOwner whenNotPaused {
+        require(poolId == 0, "cannot set pool");
+        poolId = _poolId;
     }
 
     // View function to see pending Becos on frontend.

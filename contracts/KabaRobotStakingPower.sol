@@ -27,7 +27,7 @@ contract KabaRobotStakingPower is IGetStakingPower {
         override
         returns (uint256)
     {
-        (, , uint8 cardId, , , uint8 level) = IRobotNFT(_erc721).getRobotInfo(
+        (, , uint8 cardId) = IRobotNFT(_erc721).getRobotInfo(
             _tokenId
         );
         return cardId * level;
